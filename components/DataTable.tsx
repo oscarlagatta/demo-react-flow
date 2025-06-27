@@ -1,160 +1,77 @@
 "use client"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
+import { ArrowLeft, Download, Filter, Search } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, ArrowRight } from "lucide-react"
+import { useState } from "react"
+import DataTableModal from "./DataTableModal"
 
 const mockData = [
   {
-    aitNumber: "1901",
-    aitName: "Wire Transfer System",
-    flowDirection: "INBOUND FROM",
-    flowAitNumber: "AllSources",
-    flowAitName: "Complete",
-    isTrafficFlowing: "Yes",
-    isTrafficOnTrend: "Yes",
-    currentStdDev: "24.64",
-    historicMean: "2145",
-    historicStdDev: "1398",
-    currentTxCount: "36295",
-    avgTxCount: "36253",
-    avgDelta: "On-Trend (2.50%)",
-    balanced: "Yes",
-    analyticsContext: "",
+    id: "TXN001",
+    timestamp: "2025-01-05 14:23:15",
+    system: "Swift Gateway",
+    amount: "$125,000.00",
+    status: "Completed",
+    type: "Wire Transfer",
+    reference: "ACME20241201",
   },
   {
-    aitNumber: "1901",
-    aitName: "Wire Transfer System",
-    flowDirection: "OUTBOUND TO",
-    flowAitNumber: "AllSources",
-    flowAitName: "Complete",
-    isTrafficFlowing: "Yes",
-    isTrafficOnTrend: "Yes",
-    currentStdDev: "-1.12",
-    historicMean: "2145",
-    historicStdDev: "1398",
-    currentTxCount: "575",
-    avgTxCount: "4242",
-    avgDelta: "Off-Trend (-86.45%)",
-    balanced: "No",
-    analyticsContext: "",
+    id: "TXN002",
+    timestamp: "2025-01-05 14:22:45",
+    system: "CashPro Payments",
+    amount: "$75,500.00",
+    status: "Processing",
+    type: "ACH Transfer",
+    reference: "ACME20241202",
   },
   {
-    aitNumber: "1901",
-    aitName: "Wire Transfer System",
-    flowDirection: "INBOUND FROM",
-    flowAitNumber: "AllSources",
-    flowAitName: "Incomplete",
-    isTrafficFlowing: "Yes",
-    isTrafficOnTrend: "Yes",
-    currentStdDev: "-1.25",
-    historicMean: "2145",
-    historicStdDev: "1398",
-    currentTxCount: "399",
-    avgTxCount: "677",
-    avgDelta: "Off-Trend (-41.18%)",
-    balanced: "No",
-    analyticsContext: "",
+    id: "TXN003",
+    timestamp: "2025-01-05 14:21:30",
+    system: "GPO",
+    amount: "$250,000.00",
+    status: "Failed",
+    type: "Wire Transfer",
+    reference: "ACME20241203",
   },
   {
-    aitNumber: "1901",
-    aitName: "Wire Transfer System",
-    flowDirection: "OUTBOUND TO",
-    flowAitNumber: "AllSources",
-    flowAitName: "Incomplete",
-    isTrafficFlowing: "Yes",
-    isTrafficOnTrend: "Yes",
-    currentStdDev: "-1.53",
-    historicMean: "2145",
-    historicStdDev: "1398",
-    currentTxCount: "2",
-    avgTxCount: "109",
-    avgDelta: "Off-Trend (-98.16%)",
-    balanced: "No",
-    analyticsContext: "",
+    id: "TXN004",
+    timestamp: "2025-01-05 14:20:15",
+    system: "Swift Alliance",
+    amount: "$45,750.00",
+    status: "Completed",
+    type: "SWIFT MT103",
+    reference: "ACME20241204",
   },
   {
-    aitNumber: "1901",
-    aitName: "Wire Transfer System",
-    flowDirection: "INBOUND FROM",
-    flowAitNumber: "46951",
-    flowAitName: "ETS",
-    isTrafficFlowing: "Yes",
-    isTrafficOnTrend: "Yes",
-    currentStdDev: "2.42",
-    historicMean: "157178",
-    historicStdDev: "101185",
-    currentTxCount: "402268",
-    avgTxCount: "406580",
-    avgDelta: "On-Trend (-1.06%)",
-    balanced: "Yes",
-    analyticsContext: "",
-  },
-  {
-    aitNumber: "1901",
-    aitName: "Wire Transfer System",
-    flowDirection: "INBOUND FROM",
-    flowAitNumber: "73929",
-    flowAitName: "GFD",
-    isTrafficFlowing: "Yes",
-    isTrafficOnTrend: "Yes",
-    currentStdDev: "3.07",
-    historicMean: "23074",
-    historicStdDev: "16446",
-    currentTxCount: "83478",
-    avgTxCount: "72837",
-    avgDelta: "On-Trend (14.61%)",
-    balanced: "Yes",
-    analyticsContext: "",
-  },
-  {
-    aitNumber: "1901",
-    aitName: "Wire Transfer System",
-    flowDirection: "INBOUND FROM",
-    flowAitNumber: "62686",
-    flowAitName: "GTMS",
-    isTrafficFlowing: "Yes",
-    isTrafficOnTrend: "Yes",
-    currentStdDev: "1.83",
-    historicMean: "22928",
-    historicStdDev: "10688",
-    currentTxCount: "42531",
-    avgTxCount: "45967",
-    avgDelta: "On-Trend (-7.48%)",
-    balanced: "Yes",
-    analyticsContext: "",
-  },
-  {
-    aitNumber: "1901",
-    aitName: "Wire Transfer System",
-    flowDirection: "OUTBOUND TO",
-    flowAitNumber: "46951",
-    flowAitName: "ETS",
-    isTrafficFlowing: "Yes",
-    isTrafficOnTrend: "Yes",
-    currentStdDev: "2.36",
-    historicMean: "152599",
-    historicStdDev: "97837",
-    currentTxCount: "383966",
-    avgTxCount: "392862",
-    avgDelta: "On-Trend (-2.27%)",
-    balanced: "Yes",
-    analyticsContext: "",
+    id: "TXN005",
+    timestamp: "2025-01-05 14:19:00",
+    system: "RPI",
+    amount: "$180,000.00",
+    status: "Pending",
+    type: "Real-time Payment",
+    reference: "ACME20241205",
   },
 ]
-
-const StatusBadge = ({ value }: { value: string }) => {
-  if (value === "Yes") {
-    return <Badge className="bg-green-500 text-white">Yes</Badge>
-  }
-  return <Badge className="bg-red-500 text-white">{value}</Badge>
-}
 
 interface DataTableProps {
   navigate: (view: string) => void
 }
 
 export default function DataTable({ navigate }: DataTableProps) {
+  const [showDetailModal, setShowDetailModal] = useState(false)
+
+  const getStatusBadge = (status: string) => {
+    const colors = {
+      Completed: "bg-green-500 text-white",
+      Processing: "bg-blue-500 text-white",
+      Failed: "bg-red-500 text-white",
+      Pending: "bg-yellow-500 text-white",
+    }
+    return <Badge className={colors[status as keyof typeof colors] || "bg-gray-500 text-white"}>{status}</Badge>
+  }
+
   return (
     <motion.div
       className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900"
@@ -174,72 +91,137 @@ export default function DataTable({ navigate }: DataTableProps) {
           </div>
           Global Banking APS End-to-End Payment Monitor
         </h1>
-        <Button variant="ghost" size="sm" className="text-white hover:bg-blue-800">
-          <ArrowRight className="w-4 h-4" />
-        </Button>
+        <div></div>
       </div>
 
-      {/* Table */}
+      {/* Content */}
       <div className="p-6">
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+        <motion.div
+          className="bg-white rounded-lg shadow-lg overflow-hidden"
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          {/* Table Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">Payment Transaction Summary</h2>
+              <Button
+                onClick={() => setShowDetailModal(true)}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20"
+              >
+                View Details
+              </Button>
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search transactions..."
+                  className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/70"
+                />
+              </div>
+              <Button variant="outline" size="sm" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
+                <Filter className="w-4 h-4 mr-2" />
+                Filter
+              </Button>
+              <Button variant="outline" size="sm" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
+                <Download className="w-4 h-4 mr-2" />
+                Export
+              </Button>
+            </div>
+          </div>
+
+          {/* Table */}
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-blue-800 text-white">
+            <table className="w-full border-collapse">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">AIT Number</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">AIT Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Flow Direction</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Flow AIT Number</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Flow AIT Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Is Traffic Flowing</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Is Traffic On Trend</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Current Standard Deviation</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Historic Mean</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Historic Standard Deviation</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Current Transaction Count</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Average Transaction Count</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Average Delta</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Balanced</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold">Analytics Context</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Transaction ID</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Timestamp</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">System</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Amount</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Type</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Reference</th>
                 </tr>
               </thead>
               <tbody>
-                {mockData.map((row, index) => (
+                {mockData.map((transaction, index) => (
                   <motion.tr
-                    key={index}
-                    className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 transition-colors`}
+                    key={transaction.id}
+                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: index * 0.1 }}
                   >
-                    <td className="px-4 py-3 text-sm">{row.aitNumber}</td>
-                    <td className="px-4 py-3 text-sm">{row.aitName}</td>
-                    <td className="px-4 py-3 text-sm">{row.flowDirection}</td>
-                    <td className="px-4 py-3 text-sm">{row.flowAitNumber}</td>
-                    <td className="px-4 py-3 text-sm">{row.flowAitName}</td>
-                    <td className="px-4 py-3 text-sm">
-                      <StatusBadge value={row.isTrafficFlowing} />
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      <StatusBadge value={row.isTrafficOnTrend} />
-                    </td>
-                    <td className="px-4 py-3 text-sm">{row.currentStdDev}</td>
-                    <td className="px-4 py-3 text-sm">{row.historicMean}</td>
-                    <td className="px-4 py-3 text-sm">{row.historicStdDev}</td>
-                    <td className="px-4 py-3 text-sm">{row.currentTxCount}</td>
-                    <td className="px-4 py-3 text-sm">{row.avgTxCount}</td>
-                    <td className="px-4 py-3 text-sm">{row.avgDelta}</td>
-                    <td className="px-4 py-3 text-sm">
-                      <StatusBadge value={row.balanced} />
-                    </td>
-                    <td className="px-4 py-3 text-sm">{row.analyticsContext}</td>
+                    <td className="py-3 px-4 font-mono text-sm">{transaction.id}</td>
+                    <td className="py-3 px-4 text-sm text-gray-600">{transaction.timestamp}</td>
+                    <td className="py-3 px-4 text-sm font-medium">{transaction.system}</td>
+                    <td className="py-3 px-4 text-sm font-semibold text-green-600">{transaction.amount}</td>
+                    <td className="py-3 px-4 text-sm">{transaction.type}</td>
+                    <td className="py-3 px-4">{getStatusBadge(transaction.status)}</td>
+                    <td className="py-3 px-4 font-mono text-sm text-gray-600">{transaction.reference}</td>
                   </motion.tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+
+          {/* Summary Stats */}
+          <div className="p-6 bg-gray-50">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <motion.div
+                className="bg-blue-50 rounded-lg p-4"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3, delay: 0.5 }}
+              >
+                <h3 className="text-sm font-medium text-blue-800">Total Transactions</h3>
+                <p className="text-2xl font-bold text-blue-900">{mockData.length}</p>
+              </motion.div>
+              <motion.div
+                className="bg-green-50 rounded-lg p-4"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3, delay: 0.6 }}
+              >
+                <h3 className="text-sm font-medium text-green-800">Completed</h3>
+                <p className="text-2xl font-bold text-green-900">
+                  {mockData.filter((t) => t.status === "Completed").length}
+                </p>
+              </motion.div>
+              <motion.div
+                className="bg-yellow-50 rounded-lg p-4"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3, delay: 0.7 }}
+              >
+                <h3 className="text-sm font-medium text-yellow-800">Processing</h3>
+                <p className="text-2xl font-bold text-yellow-900">
+                  {mockData.filter((t) => t.status === "Processing" || t.status === "Pending").length}
+                </p>
+              </motion.div>
+              <motion.div
+                className="bg-red-50 rounded-lg p-4"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3, delay: 0.8 }}
+              >
+                <h3 className="text-sm font-medium text-red-800">Failed</h3>
+                <p className="text-2xl font-bold text-red-900">
+                  {mockData.filter((t) => t.status === "Failed").length}
+                </p>
+              </motion.div>
+            </div>
+          </div>
+        </motion.div>
       </div>
+
+      {/* Enhanced Modal */}
+      <DataTableModal isOpen={showDetailModal} onClose={() => setShowDetailModal(false)} />
     </motion.div>
   )
 }

@@ -6,7 +6,15 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAppContext } from "../context/AppContext"
-import { Trash2, X, Maximize2, Minimize2 } from "lucide-react"
+import { Trash2, X, Maximize2, Minimize2, Edit3, Play, Pause, Zap, RotateCcw } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { AlertCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { gsap } from "gsap"
 
 interface Position {
   x: number
@@ -33,6 +41,9 @@ interface Connection {
   targetId: string
   sourceHandle?: string
   targetHandle?: string
+  isActive?: boolean
+  isCritical?: boolean
+  flowRate?: number // 1-5 scale for animation speed
 }
 
 interface DragState {
@@ -54,6 +65,26 @@ interface ContextMenu {
   visible: boolean
   position: Position
   connectionId: string | null
+}
+
+interface EditableSystemNode {
+  id: string
+  name: string
+  aitNumber: string
+  description?: string
+  status: {
+    flow: "active" | "warning" | "error"
+    trend: "active" | "warning" | "error"
+    balanced: "active" | "warning" | "error"
+  }
+}
+
+interface NodeEditState {
+  isOpen: boolean
+  nodeId: string | null
+  editData: EditableSystemNode | null
+  errors: Record<string, string>
+  hasChanges: boolean
 }
 
 // Define swim lanes with their respective systems
@@ -88,31 +119,70 @@ const SWIM_LANES: SwimLane[] = [
   },
 ]
 
-// Precise connection mapping
+// Enhanced connection mapping with animation properties
 const PRECISE_CONNECTIONS: Connection[] = [
-  { id: "swift-gateway-swift-alliance", sourceId: "swift-gateway", targetId: "swift-alliance" },
-  { id: "loan-iq-swift-alliance", sourceId: "loan-iq", targetId: "swift-alliance" },
-  { id: "loan-iq-cashpro-payments", sourceId: "loan-iq", targetId: "cashpro-payments" },
-  { id: "cashpro-mobile-cashpro-payments", sourceId: "cashpro-mobile", targetId: "cashpro-payments" },
-  { id: "cpo-gateway-frp-us", sourceId: "cpo-gateway", targetId: "frp-us" },
-  { id: "cpo-gateway-b2bi", sourceId: "cpo-gateway", targetId: "b2bi" },
-  { id: "b2bi-ecb", sourceId: "b2bi", targetId: "ecb" },
-  { id: "swift-alliance-gpo", sourceId: "swift-alliance", targetId: "gpo" },
-  { id: "swift-alliance-cashpro-payments", sourceId: "swift-alliance", targetId: "cashpro-payments" },
-  { id: "gpo-rpi", sourceId: "gpo", targetId: "rpi" },
-  { id: "gpo-cashpro-payments", sourceId: "gpo", targetId: "cashpro-payments" },
-  { id: "cashpro-payments-psh", sourceId: "cashpro-payments", targetId: "psh" },
-  { id: "cashpro-payments-mrp", sourceId: "cashpro-payments", targetId: "mrp" },
-  { id: "frp-us-psh", sourceId: "frp-us", targetId: "psh" },
-  { id: "psh-mrp", sourceId: "psh", targetId: "mrp" },
-  { id: "rpi-gbs-aries", sourceId: "rpi", targetId: "gbs-aries" },
-  { id: "mrp-wtx", sourceId: "mrp", targetId: "wtx" },
-  { id: "gbs-aries-gtms", sourceId: "gbs-aries", targetId: "gtms" },
-  { id: "gbs-aries-ets", sourceId: "gbs-aries", targetId: "ets" },
-  { id: "gtms-ets", sourceId: "gtms", targetId: "ets" },
-  { id: "ets-gfd", sourceId: "ets", targetId: "gfd" },
-  { id: "gfd-wtx", sourceId: "gfd", targetId: "wtx" },
-  { id: "wtx-rtfp", sourceId: "wtx", targetId: "rtfp" },
+  {
+    id: "swift-gateway-swift-alliance",
+    sourceId: "swift-gateway",
+    targetId: "swift-alliance",
+    isActive: true,
+    flowRate: 3,
+  },
+  { id: "loan-iq-swift-alliance", sourceId: "loan-iq", targetId: "swift-alliance", isActive: true, flowRate: 2 },
+  {
+    id: "loan-iq-cashpro-payments",
+    sourceId: "loan-iq",
+    targetId: "cashpro-payments",
+    isActive: true,
+    isCritical: true,
+    flowRate: 5,
+  },
+  {
+    id: "cashpro-mobile-cashpro-payments",
+    sourceId: "cashpro-mobile",
+    targetId: "cashpro-payments",
+    isActive: true,
+    flowRate: 4,
+  },
+  { id: "cpo-gateway-frp-us", sourceId: "cpo-gateway", targetId: "frp-us", isActive: false, flowRate: 1 },
+  { id: "cpo-gateway-b2bi", sourceId: "cpo-gateway", targetId: "b2bi", isActive: true, flowRate: 2 },
+  { id: "b2bi-ecb", sourceId: "b2bi", targetId: "ecb", isActive: true, flowRate: 3 },
+  {
+    id: "swift-alliance-gpo",
+    sourceId: "swift-alliance",
+    targetId: "gpo",
+    isActive: true,
+    isCritical: true,
+    flowRate: 5,
+  },
+  {
+    id: "swift-alliance-cashpro-payments",
+    sourceId: "swift-alliance",
+    targetId: "cashpro-payments",
+    isActive: true,
+    flowRate: 4,
+  },
+  { id: "gpo-rpi", sourceId: "gpo", targetId: "rpi", isActive: true, flowRate: 3 },
+  { id: "gpo-cashpro-payments", sourceId: "gpo", targetId: "cashpro-payments", isActive: true, flowRate: 3 },
+  {
+    id: "cashpro-payments-psh",
+    sourceId: "cashpro-payments",
+    targetId: "psh",
+    isActive: true,
+    isCritical: true,
+    flowRate: 5,
+  },
+  { id: "cashpro-payments-mrp", sourceId: "cashpro-payments", targetId: "mrp", isActive: true, flowRate: 4 },
+  { id: "frp-us-psh", sourceId: "frp-us", targetId: "psh", isActive: false, flowRate: 1 },
+  { id: "psh-mrp", sourceId: "psh", targetId: "mrp", isActive: true, flowRate: 3 },
+  { id: "rpi-gbs-aries", sourceId: "rpi", targetId: "gbs-aries", isActive: true, flowRate: 2 },
+  { id: "mrp-wtx", sourceId: "mrp", targetId: "wtx", isActive: true, isCritical: true, flowRate: 5 },
+  { id: "gbs-aries-gtms", sourceId: "gbs-aries", targetId: "gtms", isActive: true, flowRate: 3 },
+  { id: "gbs-aries-ets", sourceId: "gbs-aries", targetId: "ets", isActive: true, flowRate: 2 },
+  { id: "gtms-ets", sourceId: "gtms", targetId: "ets", isActive: true, flowRate: 3 },
+  { id: "ets-gfd", sourceId: "ets", targetId: "gfd", isActive: true, flowRate: 4 },
+  { id: "gfd-wtx", sourceId: "gfd", targetId: "wtx", isActive: true, flowRate: 3 },
+  { id: "wtx-rtfp", sourceId: "wtx", targetId: "rtfp", isActive: true, isCritical: true, flowRate: 5 },
 ]
 
 // Custom hook for viewport dimensions
@@ -255,6 +325,10 @@ const SystemNode = ({
   onConnectionEnd,
   isHighlighted = false,
   scale = 1,
+  onEdit,
+  editableSystems,
+  isInitialLoad = false,
+  entranceDelay = 0,
 }: {
   system: any
   navigate: (view: string, systemId?: string) => void
@@ -268,9 +342,79 @@ const SystemNode = ({
   onConnectionEnd: (nodeId: string) => void
   isHighlighted?: boolean
   scale?: number
+  onEdit: (nodeId: string) => void
+  editableSystems: Record<string, EditableSystemNode>
+  isInitialLoad?: boolean
+  entranceDelay?: number
 }) => {
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+  const [hasAnimated, setHasAnimated] = useState(false)
+
+  // Get editable data for this system
+  const editableData = editableSystems[system.id] || {
+    name: system.name,
+    aitNumber: system.aitNumber,
+    description: `${system.name} - Payment processing system`,
+    status: system.status,
+  }
+
+  // GSAP Entrance Animation
+  useEffect(() => {
+    if (isInitialLoad && nodeRef.current && !hasAnimated) {
+      const node = nodeRef.current
+
+      // Set initial state - hidden and positioned off-screen to the left
+      gsap.set(node, {
+        opacity: 0,
+        scale: 0.9,
+        x: -100,
+        y: 20,
+        rotation: -5,
+      })
+
+      // Create entrance animation with stagger delay
+      const tl = gsap.timeline({
+        delay: entranceDelay,
+        onComplete: () => setHasAnimated(true),
+      })
+
+      tl.to(node, {
+        opacity: 1,
+        scale: 1,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        duration: 0.8,
+        ease: "back.out(1.7)",
+      })
+        .to(
+          node,
+          {
+            boxShadow: "0 10px 25px rgba(0, 0, 0, 0.15)",
+            duration: 0.3,
+            ease: "power2.out",
+          },
+          "-=0.3",
+        )
+        .to(
+          node,
+          {
+            scale: 1.05,
+            duration: 0.2,
+            ease: "power2.out",
+            yoyo: true,
+            repeat: 1,
+          },
+          "-=0.1",
+        )
+
+      return () => {
+        tl.kill()
+      }
+    }
+  }, [isInitialLoad, entranceDelay, hasAnimated])
 
   const constrainPosition = useCallback(
     (pos: Position): Position => {
@@ -351,6 +495,8 @@ const SystemNode = ({
         fontSize: `${fontSize}px`,
       }}
       onMouseDown={handleMouseDown}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       whileHover={{ scale: isDragging ? 1 : 1.02 }}
       whileDrag={{ scale: 1.05 }}
       transition={{ type: "spring", stiffness: 300 }}
@@ -359,6 +505,22 @@ const SystemNode = ({
         boxShadow: isDragging ? "0 20px 25px -5px rgba(0, 0, 0, 0.1)" : "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
       }}
     >
+      {/* Edit Button */}
+      {isHovered && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(e) => {
+            e.stopPropagation()
+            onEdit(system.id)
+          }}
+          className="absolute -top-2 -right-2 h-6 w-6 p-0 bg-blue-500 hover:bg-blue-600 text-white rounded-full opacity-90 hover:opacity-100 transition-all"
+          title="Edit node"
+        >
+          <Edit3 className="w-3 h-3" />
+        </Button>
+      )}
+
       {/* Connection Handles */}
       <ConnectionHandle
         position="top"
@@ -391,13 +553,13 @@ const SystemNode = ({
 
       <div className="text-center">
         <div className="drag-handle cursor-move">
-          <h3 className="font-semibold text-gray-800 mb-1 leading-tight">{system.name}</h3>
-          <p className="text-gray-600 mb-2 leading-tight">{system.aitNumber}</p>
+          <h3 className="font-semibold text-gray-800 mb-1 leading-tight">{editableData.name}</h3>
+          <p className="text-gray-600 mb-2 leading-tight">{editableData.aitNumber}</p>
         </div>
         <div className="flex flex-wrap gap-1 justify-center mb-2">
-          <StatusBadge status={system.status.flow} label="Flow" />
-          <StatusBadge status={system.status.trend} label="Trend" />
-          <StatusBadge status={system.status.balanced} label="Balanced" />
+          <StatusBadge status={editableData.status.flow} label="Flow" />
+          <StatusBadge status={editableData.status.trend} label="Trend" />
+          <StatusBadge status={editableData.status.balanced} label="Balanced" />
         </div>
         {showButtons && (
           <div className="flex gap-1 justify-center">
@@ -428,7 +590,7 @@ const SystemNode = ({
   )
 }
 
-const ConnectionLine = ({
+const AnimatedConnectionLine = ({
   connection,
   sourcePos,
   targetPos,
@@ -437,6 +599,8 @@ const ConnectionLine = ({
   isSelected = false,
   onSelect,
   onRightClick,
+  animationsEnabled = true,
+  entranceDelay = 0,
 }: {
   connection?: Connection
   sourcePos: Position
@@ -446,7 +610,14 @@ const ConnectionLine = ({
   isSelected?: boolean
   onSelect?: (connectionId: string) => void
   onRightClick?: (e: React.MouseEvent, connectionId: string) => void
+  animationsEnabled?: boolean
+  entranceDelay?: number
 }) => {
+  const pathRef = useRef<SVGPathElement>(null)
+  const flowRef = useRef<SVGPathElement>(null)
+  const pulseRef = useRef<SVGCircleElement>(null)
+  const glowRef = useRef<SVGPathElement>(null)
+
   const midX = (sourcePos.x + targetPos.x) / 2
   const midY = (sourcePos.y + targetPos.y) / 2
 
@@ -457,7 +628,104 @@ const ConnectionLine = ({
 
   const pathData = `M ${sourcePos.x} ${sourcePos.y} C ${controlPoint1X} ${controlPoint1Y}, ${controlPoint2X} ${controlPoint2Y}, ${targetPos.x} ${targetPos.y}`
 
+  // Calculate path length for animations
+  const pathLength = useRef<number>(0)
+
+  useEffect(() => {
+    if (pathRef.current) {
+      pathLength.current = pathRef.current.getTotalLength()
+    }
+  }, [pathData])
+
+  // GSAP Entrance Animation for connections
+  useEffect(() => {
+    if (connection && pathRef.current && entranceDelay > 0) {
+      const path = pathRef.current
+
+      // Set initial state - path drawn from 0 to 0 (invisible)
+      gsap.set(path, {
+        strokeDasharray: pathLength.current,
+        strokeDashoffset: pathLength.current,
+        opacity: 0,
+      })
+
+      // Animate the path drawing in
+      gsap
+        .timeline({ delay: entranceDelay + 0.5 }) // Start after nodes begin animating
+        .to(path, {
+          strokeDashoffset: 0,
+          opacity: 1,
+          duration: 1.2,
+          ease: "power2.out",
+        })
+        .set(path, {
+          strokeDasharray: "none",
+          strokeDashoffset: 0,
+        })
+    }
+  }, [connection, entranceDelay])
+
+  // GSAP Flow Animations
+  useEffect(() => {
+    if (!connection || !animationsEnabled) return
+
+    const tl = gsap.timeline({ repeat: -1 })
+
+    if (connection.isActive) {
+      // Flow animation - moving dash pattern
+      if (flowRef.current) {
+        const dashLength = 20
+        const gapLength = 10
+        const totalDash = dashLength + gapLength
+
+        gsap.set(flowRef.current, {
+          strokeDasharray: `${dashLength} ${gapLength}`,
+          strokeDashoffset: 0,
+        })
+
+        const speed = connection.flowRate || 1
+        const duration = 3 / speed // Faster for higher flow rates
+
+        gsap.to(flowRef.current, {
+          strokeDashoffset: -totalDash,
+          duration: duration,
+          ease: "none",
+          repeat: -1,
+        })
+      }
+
+      // Pulse animation for critical paths
+      if (connection.isCritical && pulseRef.current) {
+        gsap.to(pulseRef.current, {
+          r: 8,
+          opacity: 0,
+          duration: 1,
+          ease: "power2.out",
+          repeat: -1,
+          yoyo: false,
+        })
+      }
+
+      // Glow effect for critical paths
+      if (connection.isCritical && glowRef.current) {
+        gsap.to(glowRef.current, {
+          strokeWidth: 8,
+          opacity: 0.3,
+          duration: 1.5,
+          ease: "power2.inOut",
+          repeat: -1,
+          yoyo: true,
+        })
+      }
+    }
+
+    return () => {
+      tl.kill()
+    }
+  }, [connection, animationsEnabled])
+
   const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault()
     e.stopPropagation()
     if (connection && onSelect) {
       onSelect(connection.id)
@@ -472,33 +740,106 @@ const ConnectionLine = ({
     }
   }
 
+  if (!connection && isTemporary) {
+    // Temporary connection line (no interaction)
+    return (
+      <g>
+        <path
+          d={pathData}
+          stroke="#10b981"
+          strokeWidth="2"
+          fill="none"
+          markerEnd="url(#arrowhead)"
+          className="stroke-dasharray-[5,5] animate-pulse"
+        />
+      </g>
+    )
+  }
+
+  const getConnectionColor = () => {
+    if (isSelected) return "#ef4444"
+    if (isHighlighted) return "#3b82f6"
+    if (connection?.isCritical) return "#dc2626"
+    if (connection?.isActive) return "#059669"
+    return "#374151"
+  }
+
+  const getConnectionWidth = () => {
+    if (isSelected) return 4
+    if (connection?.isCritical) return 3
+    if (connection?.isActive) return 2.5
+    return 2
+  }
+
   return (
     <g>
+      {/* Glow effect for critical paths */}
+      {connection?.isCritical && (
+        <path
+          ref={glowRef}
+          d={pathData}
+          stroke="#dc2626"
+          strokeWidth="6"
+          fill="none"
+          opacity="0.2"
+          filter="blur(2px)"
+        />
+      )}
+
+      {/* Invisible wider path for easier clicking */}
       <path
         d={pathData}
         stroke="transparent"
-        strokeWidth="12"
+        strokeWidth="16"
         fill="none"
         className="cursor-pointer"
         onClick={handleClick}
         onContextMenu={handleRightClick}
+        style={{ pointerEvents: "stroke" }}
       />
 
+      {/* Main connection line */}
       <path
+        ref={pathRef}
         d={pathData}
-        stroke={isSelected ? "#ef4444" : isHighlighted ? "#3b82f6" : isTemporary ? "#10b981" : "#374151"}
-        strokeWidth={isSelected ? 4 : isHighlighted ? 3 : 2}
+        stroke={getConnectionColor()}
+        strokeWidth={getConnectionWidth()}
         fill="none"
         markerEnd="url(#arrowhead)"
-        className={`${isTemporary ? "stroke-dasharray-[5,5] animate-pulse" : ""} ${
-          connection && !isTemporary ? "cursor-pointer hover:stroke-blue-500" : ""
-        }`}
+        className="cursor-pointer hover:stroke-blue-500 transition-colors"
         onClick={handleClick}
         onContextMenu={handleRightClick}
+        style={{ pointerEvents: "none" }}
       />
 
-      {isSelected && connection && (
+      {/* Animated flow line for active connections */}
+      {connection?.isActive && (
+        <path
+          ref={flowRef}
+          d={pathData}
+          stroke={connection.isCritical ? "#fbbf24" : "#10b981"}
+          strokeWidth="3"
+          fill="none"
+          opacity="0.8"
+          style={{ pointerEvents: "none" }}
+        />
+      )}
+
+      {/* Selection indicator */}
+      {isSelected && (
         <circle cx={midX} cy={midY} r="6" fill="#ef4444" stroke="white" strokeWidth="2" className="animate-pulse" />
+      )}
+
+      {/* Pulse effect for critical paths */}
+      {connection?.isCritical && connection?.isActive && (
+        <circle
+          ref={pulseRef}
+          cx={midX}
+          cy={midY}
+          r="4"
+          fill={connection.isCritical ? "#dc2626" : "#059669"}
+          opacity="0.6"
+        />
       )}
     </g>
   )
@@ -515,32 +856,59 @@ const ContextMenu = ({
   onDelete: () => void
   onClose: () => void
 }) => {
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (visible && menuRef.current) {
+      gsap.fromTo(
+        menuRef.current,
+        {
+          opacity: 0,
+          scale: 0.9,
+          y: -10,
+          transformOrigin: "top center",
+        },
+        {
+          opacity: 1,
+          scale: 1,
+          y: 0,
+          duration: 0.2,
+          ease: "back.out(1.7)",
+        },
+      )
+    }
+  }, [visible])
+
   if (!visible) return null
 
   return (
-    <motion.div
-      className="fixed bg-white border border-gray-300 rounded-lg shadow-lg py-2 z-50"
+    <div
+      ref={menuRef}
+      className="fixed bg-white border border-gray-300 rounded-lg shadow-lg py-2 z-[60]"
       style={{ left: position.x, top: position.y }}
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.1 }}
+      onClick={(e) => e.stopPropagation()}
     >
       <button
-        className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left"
-        onClick={onDelete}
+        className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left transition-colors"
+        onClick={(e) => {
+          e.stopPropagation()
+          onDelete()
+        }}
       >
         <Trash2 className="w-4 h-4" />
         Delete Connection
       </button>
       <button
-        className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 w-full text-left"
-        onClick={onClose}
+        className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 w-full text-left transition-colors"
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
       >
         <X className="w-4 h-4" />
         Cancel
       </button>
-    </motion.div>
+    </div>
   )
 }
 
@@ -553,35 +921,96 @@ const DeleteConfirmation = ({
   onConfirm: () => void
   onCancel: () => void
 }) => {
+  const backdropRef = useRef<HTMLDivElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (visible && backdropRef.current && modalRef.current) {
+      // Set initial states
+      gsap.set(backdropRef.current, { opacity: 0 })
+      gsap.set(modalRef.current, {
+        scale: 0.7,
+        opacity: 0,
+        y: 50,
+        transformOrigin: "center center",
+      })
+
+      // Animate in
+      const tl = gsap.timeline()
+      tl.to(backdropRef.current, {
+        opacity: 1,
+        duration: 0.25,
+        ease: "power2.out",
+      }).to(
+        modalRef.current,
+        {
+          scale: 1,
+          opacity: 1,
+          y: 0,
+          duration: 0.4,
+          ease: "back.out(1.7)",
+        },
+        "-=0.1",
+      )
+    }
+  }, [visible])
+
+  const handleClose = (callback: () => void) => {
+    if (backdropRef.current && modalRef.current) {
+      const tl = gsap.timeline({
+        onComplete: callback,
+      })
+
+      tl.to(modalRef.current, {
+        scale: 0.8,
+        opacity: 0,
+        y: 30,
+        duration: 0.3,
+        ease: "power2.in",
+      }).to(
+        backdropRef.current,
+        {
+          opacity: 0,
+          duration: 0.2,
+          ease: "power2.in",
+        },
+        "-=0.2",
+      )
+    } else {
+      callback()
+    }
+  }
+
   if (!visible) return null
 
   return (
-    <motion.div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <motion.div
-        className="bg-white rounded-lg p-6 max-w-sm mx-4"
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-      >
-        <h3 className="text-lg font-semibold mb-2">Delete Connection</h3>
-        <p className="text-gray-600 mb-4">
-          Are you sure you want to delete this connection? This action cannot be undone.
-        </p>
-        <div className="flex gap-2 justify-end">
-          <Button variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={onConfirm}>
-            Delete
-          </Button>
+    <div className="fixed inset-0 z-[70]">
+      <div
+        ref={backdropRef}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={() => handleClose(onCancel)}
+      />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div
+          ref={modalRef}
+          className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="text-lg font-semibold mb-2">Delete Connection</h3>
+          <p className="text-gray-600 mb-4">
+            Are you sure you want to delete this connection? This action cannot be undone.
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => handleClose(onCancel)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => handleClose(onConfirm)}>
+              Delete
+            </Button>
+          </div>
         </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   )
 }
 
@@ -609,6 +1038,9 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
   })
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [connectionToDelete, setConnectionToDelete] = useState<string | null>(null)
+  const [animationsEnabled, setAnimationsEnabled] = useState(true)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const [entranceAnimationComplete, setEntranceAnimationComplete] = useState(false)
 
   const [dragState, setDragState] = useState<DragState>({
     isDragging: false,
@@ -625,6 +1057,15 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
   })
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
+
+  const [nodeEditState, setNodeEditState] = useState<NodeEditState>({
+    isOpen: false,
+    nodeId: null,
+    editData: null,
+    errors: {},
+    hasChanges: false,
+  })
+  const [editableSystems, setEditableSystems] = useState<Record<string, EditableSystemNode>>({})
 
   // Calculate responsive scale based on viewport
   const responsiveScale = Math.min(1, Math.max(0.6, viewportDimensions.width / 1400))
@@ -678,6 +1119,18 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
   useEffect(() => {
     calculateLayout()
   }, [calculateLayout])
+
+  // Trigger entrance animation completion
+  useEffect(() => {
+    if (isInitialLoad) {
+      const maxDelay = SWIM_LANES.length * 0.3 + 2 // Account for stagger + animation duration
+      const timer = setTimeout(() => {
+        setEntranceAnimationComplete(true)
+      }, maxDelay * 1000)
+
+      return () => clearTimeout(timer)
+    }
+  }, [isInitialLoad])
 
   // Keyboard event handler
   useEffect(() => {
@@ -770,6 +1223,8 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
           id: `${connectionState.sourceId}-${targetId}-${Date.now()}`,
           sourceId: connectionState.sourceId,
           targetId,
+          isActive: true,
+          flowRate: 3,
         }
 
         setConnections((prev) => [...prev, newConnection])
@@ -826,7 +1281,10 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
 
   const confirmDeleteConnection = useCallback(() => {
     if (connectionToDelete) {
-      setConnections((prev) => prev.filter((conn) => conn.id !== connectionToDelete))
+      setConnections((prev) => {
+        const newConnections = prev.filter((conn) => conn.id !== connectionToDelete)
+        return newConnections
+      })
       setSelectedConnection(null)
       setConnectionToDelete(null)
     }
@@ -858,9 +1316,171 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
     setZoom(1)
     setPan({ x: 0, y: 0 })
     calculateLayout()
+    // Trigger entrance animation again
+    setIsInitialLoad(true)
+    setEntranceAnimationComplete(false)
+    setTimeout(() => setIsInitialLoad(false), 100)
   }
 
+  // Replay entrance animation
+  const handleReplayAnimation = () => {
+    setIsInitialLoad(true)
+    setEntranceAnimationComplete(false)
+    setTimeout(() => setIsInitialLoad(false), 100)
+  }
+
+  // Initialize editable systems from context
+  useEffect(() => {
+    const editableData: Record<string, EditableSystemNode> = {}
+    systems.forEach((system) => {
+      editableData[system.id] = {
+        id: system.id,
+        name: system.name,
+        aitNumber: system.aitNumber,
+        description: `${system.name} - Payment processing system`,
+        status: system.status,
+      }
+    })
+    setEditableSystems(editableData)
+  }, [systems])
+
+  // Node editing handlers
+  const handleNodeEdit = useCallback(
+    (nodeId: string) => {
+      const system = editableSystems[nodeId]
+      if (system) {
+        setNodeEditState({
+          isOpen: true,
+          nodeId,
+          editData: { ...system },
+          errors: {},
+          hasChanges: false,
+        })
+      }
+    },
+    [editableSystems],
+  )
+
+  const handleEditFieldChange = useCallback(
+    (field: string, value: string) => {
+      setNodeEditState((prev) => {
+        if (!prev.editData) return prev
+
+        const newEditData = { ...prev.editData, [field]: value }
+        const hasChanges = JSON.stringify(newEditData) !== JSON.stringify(editableSystems[prev.nodeId!])
+
+        // Clear field-specific errors when user starts typing
+        const newErrors = { ...prev.errors }
+        if (newErrors[field]) {
+          delete newErrors[field]
+        }
+
+        return {
+          ...prev,
+          editData: newEditData,
+          errors: newErrors,
+          hasChanges,
+        }
+      })
+    },
+    [editableSystems],
+  )
+
+  const handleStatusChange = useCallback(
+    (statusType: string, value: string) => {
+      setNodeEditState((prev) => {
+        if (!prev.editData) return prev
+
+        const newEditData = {
+          ...prev.editData,
+          status: {
+            ...prev.editData.status,
+            [statusType]: value as "active" | "warning" | "error",
+          },
+        }
+        const hasChanges = JSON.stringify(newEditData) !== JSON.stringify(editableSystems[prev.nodeId!])
+
+        return {
+          ...prev,
+          editData: newEditData,
+          hasChanges,
+        }
+      })
+    },
+    [editableSystems],
+  )
+
+  const validateEditData = useCallback((data: EditableSystemNode): Record<string, string> => {
+    const errors: Record<string, string> = {}
+
+    if (!data.name.trim()) {
+      errors.name = "System name is required"
+    } else if (data.name.length < 2) {
+      errors.name = "System name must be at least 2 characters"
+    } else if (data.name.length > 50) {
+      errors.name = "System name must be less than 50 characters"
+    }
+
+    if (!data.aitNumber.trim()) {
+      errors.aitNumber = "AIT number is required"
+    } else if (!/^AIT\s+\d+$/.test(data.aitNumber)) {
+      errors.aitNumber = "AIT number must follow format 'AIT XXXXX'"
+    }
+
+    if (data.description && data.description.length > 200) {
+      errors.description = "Description must be less than 200 characters"
+    }
+
+    return errors
+  }, [])
+
+  const handleSaveEdit = useCallback(() => {
+    if (!nodeEditState.editData || !nodeEditState.nodeId) return
+
+    const errors = validateEditData(nodeEditState.editData)
+
+    if (Object.keys(errors).length > 0) {
+      setNodeEditState((prev) => ({ ...prev, errors }))
+      return
+    }
+
+    // Update the editable systems
+    setEditableSystems((prev) => ({
+      ...prev,
+      [nodeEditState.nodeId!]: { ...nodeEditState.editData! },
+    }))
+
+    // Close the dialog
+    setNodeEditState({
+      isOpen: false,
+      nodeId: null,
+      editData: null,
+      errors: {},
+      hasChanges: false,
+    })
+  }, [nodeEditState, validateEditData])
+
+  const handleCancelEdit = useCallback(() => {
+    setNodeEditState({
+      isOpen: false,
+      nodeId: null,
+      editData: null,
+      errors: {},
+      hasChanges: false,
+    })
+  }, [])
+
   const filteredSystems = searchResult ? systems.filter((system) => searchResult.path.includes(system.id)) : systems
+
+  // Calculate entrance delays for staggered animation
+  const getEntranceDelay = (systemId: string): number => {
+    const laneIndex = SWIM_LANES.findIndex((lane) => lane.systems.includes(systemId))
+    const systemsInLane = systems.filter((system) => SWIM_LANES[laneIndex]?.systems.includes(system.id))
+    const systemIndexInLane = systemsInLane.findIndex((system) => system.id === systemId)
+
+    // Stagger by lane first, then by system within lane
+    return laneIndex * 0.3 + systemIndexInLane * 0.1
+  }
 
   return (
     <div
@@ -869,6 +1489,24 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
     >
       {/* Controls */}
       <div className="absolute top-2 right-2 z-20 flex flex-col gap-1">
+        <Button
+          size="sm"
+          onClick={handleReplayAnimation}
+          className="bg-purple-500 hover:bg-purple-600 text-white h-8 w-8 p-0"
+          title="Replay entrance animation"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => setAnimationsEnabled(!animationsEnabled)}
+          className={`${
+            animationsEnabled ? "bg-green-500 hover:bg-green-600" : "bg-gray-500 hover:bg-gray-600"
+          } text-white h-8 w-8 p-0`}
+          title={animationsEnabled ? "Disable animations" : "Enable animations"}
+        >
+          {animationsEnabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+        </Button>
         <Button size="sm" onClick={handleZoomIn} className="bg-white text-gray-800 hover:bg-gray-100 h-8 w-8 p-0">
           +
         </Button>
@@ -882,11 +1520,16 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
 
       {/* Instructions */}
       <div className="absolute top-2 left-2 z-20 bg-white/90 backdrop-blur-sm rounded-lg p-2 text-xs max-w-xs">
-        <div className="font-semibold mb-1">Swim Lane Controls:</div>
-        <div>• Nodes constrained to lanes</div>
-        <div>• Click headers to collapse/expand</div>
+        <div className="font-semibold mb-1 flex items-center gap-1">
+          <Zap className="w-3 h-3 text-yellow-500" />
+          Animated Flow Controls:
+        </div>
+        <div>• Staggered entrance animations</div>
+        <div>• Green flows = Active payments</div>
+        <div>• Red flows = Critical paths</div>
+        <div>• Yellow pulses = High priority</div>
+        <div>• Replay button for entrance animation</div>
         <div>• Right-click connections to delete</div>
-        <div>• Delete key for selected connections</div>
       </div>
 
       {/* Main Container */}
@@ -945,6 +1588,12 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
             <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
               <polygon points="0 0, 10 3.5, 0 7" fill="#374151" />
             </marker>
+            <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#059669" />
+            </marker>
+            <marker id="arrowhead-critical" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626" />
+            </marker>
           </defs>
 
           {connections.map((connection) => {
@@ -958,8 +1607,10 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
               searchResult.path.includes(connection.sourceId) &&
               searchResult.path.includes(connection.targetId)
 
+            const entranceDelay = Math.max(getEntranceDelay(connection.sourceId), getEntranceDelay(connection.targetId))
+
             return (
-              <ConnectionLine
+              <AnimatedConnectionLine
                 key={connection.id}
                 connection={connection}
                 sourcePos={sourcePos}
@@ -968,15 +1619,18 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
                 isSelected={selectedConnection === connection.id}
                 onSelect={handleConnectionSelect}
                 onRightClick={handleConnectionRightClick}
+                animationsEnabled={animationsEnabled}
+                entranceDelay={isInitialLoad ? entranceDelay : 0}
               />
             )
           })}
 
           {connectionState.isConnecting && connectionState.sourcePosition && connectionState.currentPosition && (
-            <ConnectionLine
+            <AnimatedConnectionLine
               sourcePos={connectionState.sourcePosition}
               targetPos={connectionState.currentPosition}
               isTemporary={true}
+              animationsEnabled={animationsEnabled}
             />
           )}
         </svg>
@@ -990,6 +1644,8 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
             const isLaneCollapsed = systemLane ? collapsedLanes.has(systemLane.id) : false
 
             if (!position || !bounds || isLaneCollapsed) return null
+
+            const entranceDelay = getEntranceDelay(system.id)
 
             return (
               <SystemNode
@@ -1006,6 +1662,10 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
                 onConnectionEnd={handleConnectionEnd}
                 isHighlighted={searchResult ? searchResult.path.includes(system.id) : false}
                 scale={responsiveScale}
+                onEdit={handleNodeEdit}
+                editableSystems={editableSystems}
+                isInitialLoad={isInitialLoad}
+                entranceDelay={entranceDelay}
               />
             )
           })}
@@ -1013,23 +1673,186 @@ export default function SwimLaneFlowDiagram({ navigate }: SwimLaneFlowDiagramPro
       </div>
 
       {/* Context Menu */}
-      <AnimatePresence>
+      {contextMenu.visible && (
         <ContextMenu
           visible={contextMenu.visible}
           position={contextMenu.position}
           onDelete={() => contextMenu.connectionId && handleDeleteConnection(contextMenu.connectionId)}
           onClose={() => setContextMenu({ visible: false, position: { x: 0, y: 0 }, connectionId: null })}
         />
-      </AnimatePresence>
+      )}
 
       {/* Delete Confirmation Modal */}
-      <AnimatePresence>
+      {showDeleteConfirmation && (
         <DeleteConfirmation
           visible={showDeleteConfirmation}
           onConfirm={confirmDeleteConnection}
           onCancel={cancelDeleteConnection}
         />
-      </AnimatePresence>
+      )}
+
+      {/* Node Edit Dialog */}
+      <Dialog open={nodeEditState.isOpen} onOpenChange={(open) => !open && handleCancelEdit()}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit3 className="w-5 h-5" />
+              Edit System Node
+            </DialogTitle>
+          </DialogHeader>
+
+          {nodeEditState.editData && (
+            <div className="space-y-4">
+              {/* System Name */}
+              <div className="space-y-2">
+                <Label htmlFor="name">System Name</Label>
+                <Input
+                  id="name"
+                  value={nodeEditState.editData.name}
+                  onChange={(e) => handleEditFieldChange("name", e.target.value)}
+                  placeholder="Enter system name"
+                  className={nodeEditState.errors.name ? "border-red-500" : ""}
+                />
+                {nodeEditState.errors.name && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{nodeEditState.errors.name}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              {/* AIT Number */}
+              <div className="space-y-2">
+                <Label htmlFor="aitNumber">AIT Number</Label>
+                <Input
+                  id="aitNumber"
+                  value={nodeEditState.editData.aitNumber}
+                  onChange={(e) => handleEditFieldChange("aitNumber", e.target.value)}
+                  placeholder="AIT XXXXX"
+                  className={nodeEditState.errors.aitNumber ? "border-red-500" : ""}
+                />
+                {nodeEditState.errors.aitNumber && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{nodeEditState.errors.aitNumber}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={nodeEditState.editData.description || ""}
+                  onChange={(e) => handleEditFieldChange("description", e.target.value)}
+                  placeholder="Enter system description"
+                  rows={3}
+                  className={nodeEditState.errors.description ? "border-red-500" : ""}
+                />
+                {nodeEditState.errors.description && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{nodeEditState.errors.description}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              {/* Status Controls */}
+              <div className="space-y-3">
+                <Label>System Status</Label>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="flow-status" className="text-sm">
+                      Flow
+                    </Label>
+                    <Select
+                      value={nodeEditState.editData.status.flow}
+                      onValueChange={(value) => handleStatusChange("flow", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="warning">Warning</SelectItem>
+                        <SelectItem value="error">Error</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="trend-status" className="text-sm">
+                      Trend
+                    </Label>
+                    <Select
+                      value={nodeEditState.editData.status.trend}
+                      onValueChange={(value) => handleStatusChange("trend", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="warning">Warning</SelectItem>
+                        <SelectItem value="error">Error</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="balanced-status" className="text-sm">
+                      Balanced
+                    </Label>
+                    <Select
+                      value={nodeEditState.editData.status.balanced}
+                      onValueChange={(value) => handleStatusChange("balanced", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="warning">Warning</SelectItem>
+                        <SelectItem value="error">Error</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="space-y-2">
+                <Label>Preview</Label>
+                <div className="border rounded-lg p-3 bg-gray-50">
+                  <div className="text-center">
+                    <h4 className="font-semibold text-gray-800 mb-1">{nodeEditState.editData.name}</h4>
+                    <p className="text-gray-600 mb-2 text-sm">{nodeEditState.editData.aitNumber}</p>
+                    <div className="flex gap-1 justify-center">
+                      <StatusBadge status={nodeEditState.editData.status.flow} label="Flow" />
+                      <StatusBadge status={nodeEditState.editData.status.trend} label="Trend" />
+                      <StatusBadge status={nodeEditState.editData.status.balanced} label="Balanced" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={handleCancelEdit}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={!nodeEditState.hasChanges || Object.keys(nodeEditState.errors).length > 0}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

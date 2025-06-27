@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useCallback, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAppContext } from "../context/AppContext"
@@ -484,363 +484,173 @@ interface InteractiveFlowDiagramProps {
 }
 
 export default function InteractiveFlowDiagram({ navigate }: InteractiveFlowDiagramProps) {
-  const { systems, searchResult } = useAppContext()
-  const containerRef = useRef<HTMLDivElement>(null)
+const { systems, searchResult } = useAppContext()
+const containerRef = useRef<HTMLDivElement>(null)
 
-  // State management
-  const [nodePositions, setNodePositions] = useState<Record<string, Position>>({})
-  const [connections, setConnections] = useState<Connection[]>(PRECISE_CONNECTIONS)
-  const [selectedConnection, setSelectedConnection] = useState<string | null>(null)
-  const [contextMenu, setContextMenu] = useState<ContextMenu>({
-    visible: false,
-    position: { x: 0, y: 0 },
-    connectionId: null,
+// State management
+const [nodePositions, setNodePositions] = useState<Record<string, Position>>({})
+const [connections, setConnections] = useState<Connection[]>(PRECISE_CONNECTIONS)
+const [selectedConnection, setSelectedConnection] = useState<string | null>(null)
+const [contextMenu, setContextMenu] = useState<ContextMenu>({
+  visible: false,
+  position: { x: 0, y: 0 },
+  connectionId: null,
+})
+const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
+const [connectionToDelete, setConnectionToDelete] = useState<string | null>(null)
+
+const [dragState, setDragState] = useState<DragState>({
+  isDragging: false,
+  nodeId: null,
+  offset: { x: 0, y: 0 },
+  startPosition: { x: 0, y: 0 },
+})
+const [connectionState, setConnectionState] = useState<ConnectionState>({
+  isConnecting: false,
+  sourceId: null,
+  sourcePosition: null,
+  currentPosition: null,
+})
+const [zoom, setZoom] = useState(1)
+const [pan, setPan] = useState({ x: 0, y: 0 })
+
+// Initialize node positions with precise layout matching the image
+useEffect(() => {
+  const columnPositions = {
+    origination: 150,
+    validation: 400,
+    middleware: 650,
+    processing: 900,
+  }
+
+  const initialPositions: Record<string, Position> = {}
+  systems.forEach((system) => {
+    initialPositions[system.id] = {
+      x: columnPositions[system.column],
+      y: system.position.y + 100,
+    }
   })
-  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
-  const [connectionToDelete, setConnectionToDelete] = useState<string | null>(null)
 
-  const [dragState, setDragState] = useState<DragState>({
+  setNodePositions(initialPositions)
+}, [systems])
+
+// Keyboard event handler for delete key
+useEffect(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Delete" && selectedConnection) {
+      setConnectionToDelete(selectedConnection)
+      setShowDeleteConfirmation(true)
+    }
+    if (e.key === "Escape") {
+      setSelectedConnection(null)
+      setContextMenu({ visible: false, position: { x: 0, y: 0 }, connectionId: null })
+    }
+  }
+
+  document.addEventListener("keydown", handleKeyDown)
+  return () => document.removeEventListener("keydown", handleKeyDown)
+}, [selectedConnection])
+
+// Click outside to deselect
+useEffect(() => {
+  const handleClickOutside = () => {
+    setSelectedConnection(null)
+    setContextMenu({ visible: false, position: { x: 0, y: 0 }, connectionId: null })
+  }
+
+  document.addEventListener("click", handleClickOutside)
+  return () => document.removeEventListener("click", handleClickOutside)
+}, [])
+
+// Drag handlers
+const handleDragStart = useCallback((nodeId: string, offset: Position, startPos: Position) => {
+  setDragState({
+    isDragging: true,
+    nodeId,
+    offset,
+    startPosition: startPos,
+  })
+}, [])
+
+const handleDrag = useCallback(
+  (mousePosition: Position) => {
+    if (!dragState.isDragging || !dragState.nodeId) return
+
+    const containerRect = containerRef.current?.getBoundingClientRect()
+    if (!containerRect) return
+
+    const newPosition = {
+      x: (mousePosition.x - containerRect.left - dragState.offset.x) / zoom + pan.x,
+      y: (mousePosition.y - containerRect.top - dragState.offset.y) / zoom + pan.y,
+    }
+
+    setNodePositions((prev) => ({
+      ...prev,
+      [dragState.nodeId!]: newPosition,
+    }))
+  },
+  [dragState, zoom, pan],
+)
+
+const handleDragEnd = useCallback(() => {
+  setDragState({
     isDragging: false,
     nodeId: null,
     offset: { x: 0, y: 0 },
     startPosition: { x: 0, y: 0 },
   })
-  const [connectionState, setConnectionState] = useState<ConnectionState>({
-    isConnecting: false,
-    sourceId: null,
-    sourcePosition: null,
-    currentPosition: null,
+}, [])
+
+// Connection handlers
+const handleConnectionStart = useCallback((nodeId: string, position: Position) => {
+  setConnectionState({
+    isConnecting: true,
+    sourceId: nodeId,
+    sourcePosition: position,
+    currentPosition: position,
   })
-  const [zoom, setZoom] = useState(1)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
+}, [])
 
-  // Initialize node positions with precise layout matching the image
-  useEffect(() => {
-    const columnPositions = {
-      origination: 150,
-      validation: 400,
-      middleware: 650,
-      processing: 900,
+const handleConnectionEnd = useCallback(
+  (targetId: string) => {
+    if (connectionState.isConnecting && connectionState.sourceId && connectionState.sourceId !== targetId) {
+      const newConnection: Connection = {
+        id: `${connectionState.sourceId}-${targetId}-${Date.now()}`,
+        sourceId: connectionState.sourceId,
+        targetId,
+      }
+
+      setConnections((prev) => [...prev, newConnection])
     }
 
-    const initialPositions: Record<string, Position> = {}
-    systems.forEach((system) => {
-      initialPositions[system.id] = {
-        x: columnPositions[system.column],
-        y: system.position.y + 100,
-      }
-    })
-
-    setNodePositions(initialPositions)
-  }, [systems])
-
-  // Keyboard event handler for delete key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Delete" && selectedConnection) {
-        setConnectionToDelete(selectedConnection)
-        setShowDeleteConfirmation(true)
-      }
-      if (e.key === "Escape") {
-        setSelectedConnection(null)
-        setContextMenu({ visible: false, position: { x: 0, y: 0 }, connectionId: null })
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
-  }, [selectedConnection])
-
-  // Click outside to deselect
-  useEffect(() => {
-    const handleClickOutside = () => {
-      setSelectedConnection(null)
-      setContextMenu({ visible: false, position: { x: 0, y: 0 }, connectionId: null })
-    }
-
-    document.addEventListener("click", handleClickOutside)
-    return () => document.removeEventListener("click", handleClickOutside)
-  }, [])
-
-  // Drag handlers
-  const handleDragStart = useCallback((nodeId: string, offset: Position, startPos: Position) => {
-    setDragState({
-      isDragging: true,
-      nodeId,
-      offset,
-      startPosition: startPos,
-    })
-  }, [])
-
-  const handleDrag = useCallback(
-    (mousePosition: Position) => {
-      if (!dragState.isDragging || !dragState.nodeId) return
-
-      const containerRect = containerRef.current?.getBoundingClientRect()
-      if (!containerRect) return
-
-      const newPosition = {
-        x: (mousePosition.x - containerRect.left - dragState.offset.x) / zoom + pan.x,
-        y: (mousePosition.y - containerRect.top - dragState.offset.y) / zoom + pan.y,
-      }
-
-      setNodePositions((prev) => ({
-        ...prev,
-        [dragState.nodeId!]: newPosition,
-      }))
-    },
-    [dragState, zoom, pan],
-  )
-
-  const handleDragEnd = useCallback(() => {
-    setDragState({
-      isDragging: false,
-      nodeId: null,
-      offset: { x: 0, y: 0 },
-      startPosition: { x: 0, y: 0 },
-    })
-  }, [])
-
-  // Connection handlers
-  const handleConnectionStart = useCallback((nodeId: string, position: Position) => {
     setConnectionState({
-      isConnecting: true,
-      sourceId: nodeId,
-      sourcePosition: position,
-      currentPosition: position,
+      isConnecting: false,
+      sourceId: null,
+      sourcePosition: null,
+      currentPosition: null,
     })
-  }, [])
+  },
+  [connectionState],
+)
 
-  const handleConnectionEnd = useCallback(
-    (targetId: string) => {
-      if (connectionState.isConnecting && connectionState.sourceId && connectionState.sourceId !== targetId) {
-        const newConnection: Connection = {
-          id: `${connectionState.sourceId}-${targetId}-${Date.now()}`,
-          sourceId: connectionState.sourceId,
-          targetId,
-        }
-
-        setConnections((prev) => [...prev, newConnection])
+const handleMouseMove = useCallback(
+  (e: React.MouseEvent) => {
+    if (connectionState.isConnecting) {
+      const containerRect = containerRef.current?.getBoundingClientRect()
+      if (containerRect) {
+        setConnectionState((prev) => ({
+          ...prev,
+          currentPosition: {
+            x: e.clientX - containerRect.left,
+            y: e.clientY - containerRect.top,
+          },
+        }))
       }
-
-      setConnectionState({
-        isConnecting: false,
-        sourceId: null,
-        sourcePosition: null,
-        currentPosition: null,
-      })
-    },
-    [connectionState],
-  )
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (connectionState.isConnecting) {
-        const containerRect = containerRef.current?.getBoundingClientRect()
-        if (containerRect) {
-          setConnectionState((prev) => ({
-            ...prev,
-            currentPosition: {
-              x: e.clientX - containerRect.left,
-              y: e.clientY - containerRect.top,
-            },
-          }))
-        }
-      }
-    },
-    [connectionState.isConnecting],
-  )
-
-  // Connection selection and deletion handlers
-  const handleConnectionSelect = useCallback((connectionId: string) => {
-    setSelectedConnection(connectionId)
-    setContextMenu({ visible: false, position: { x: 0, y: 0 }, connectionId: null })
-  }, [])
-
-  const handleConnectionRightClick = useCallback((e: React.MouseEvent, connectionId: string) => {
-    setContextMenu({
-      visible: true,
-      position: { x: e.clientX, y: e.clientY },
-      connectionId,
-    })
-    setSelectedConnection(connectionId)
-  }, [])
-
-  const handleDeleteConnection = useCallback((connectionId: string) => {
-    setConnectionToDelete(connectionId)
-    setShowDeleteConfirmation(true)
-    setContextMenu({ visible: false, position: { x: 0, y: 0 }, connectionId: null })
-  }, [])
-
-  const confirmDeleteConnection = useCallback(() => {
-    if (connectionToDelete) {
-      setConnections((prev) => prev.filter((conn) => conn.id !== connectionToDelete))
-      setSelectedConnection(null)
-      setConnectionToDelete(null)
     }
-    setShowDeleteConfirmation(false)
-  }, [connectionToDelete])
+  },
+  [connectionState.isConnecting],
+)
 
-  const cancelDeleteConnection = useCallback(() => {
-    setConnectionToDelete(null)
-    setShowDeleteConfirmation(false)
-  }, [])
-
-  // Zoom and pan handlers
-  const handleZoomIn = () => setZoom((prev) => Math.min(prev * 1.2, 3))
-  const handleZoomOut = () => setZoom((prev) => Math.max(prev / 1.2, 0.3))
-  const handleReset = () => {
-    setZoom(1)
-    setPan({ x: 0, y: 0 })
-  }
-
-  const filteredSystems = searchResult ? systems.filter((system) => searchResult.path.includes(system.id)) : systems
-
-  return (
-    <div className="flex-1 bg-gradient-to-br from-orange-100 to-orange-200 relative overflow-hidden">
-      {/* Controls */}
-      <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
-        <Button size="sm" onClick={handleZoomIn} className="bg-white text-gray-800 hover:bg-gray-100">
-          +
-        </Button>
-        <Button size="sm" onClick={handleZoomOut} className="bg-white text-gray-800 hover:bg-gray-100">
-          -
-        </Button>
-        <Button size="sm" onClick={handleReset} className="bg-white text-gray-800 hover:bg-gray-100">
-          ⌂
-        </Button>
-      </div>
-
-      {/* Instructions */}
-      <div className="absolute top-4 left-4 z-20 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-sm max-w-xs">
-        <div className="font-semibold mb-1">Interactive Controls:</div>
-        <div>• Drag nodes to reposition</div>
-        <div>• Hover over nodes to see connection handles</div>
-        <div>• Drag from blue dots to create connections</div>
-        <div>• Click connections to select them</div>
-        <div>• Right-click connections for delete menu</div>
-        <div>• Press Delete key to remove selected connection</div>
-      </div>
-
-      {/* Main Container */}
-      <div
-        ref={containerRef}
-        className="w-full h-full relative cursor-default"
-        onMouseMove={handleMouseMove}
-        onMouseUp={() => {
-          if (connectionState.isConnecting) {
-            setConnectionState({
-              isConnecting: false,
-              sourceId: null,
-              sourcePosition: null,
-              currentPosition: null,
-            })
-          }
-        }}
-        style={{
-          transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
-          transformOrigin: "center center",
-        }}
-      >
-        {/* Background Pattern */}
-        <div
-          className="absolute inset-0 opacity-20 pointer-events-none"
-          style={{
-            backgroundImage: `
-              linear-gradient(rgba(217, 119, 6, 0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(217, 119, 6, 0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: "20px 20px",
-          }}
-        />
-
-        {/* SVG for connections */}
-        <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 1 }}>
-          <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#374151" />
-            </marker>
-          </defs>
-
-          {/* Existing connections */}
-          {connections.map((connection) => {
-            const sourcePos = nodePositions[connection.sourceId]
-            const targetPos = nodePositions[connection.targetId]
-
-            if (!sourcePos || !targetPos) return null
-
-            const isHighlighted =
-              searchResult &&
-              searchResult.path.includes(connection.sourceId) &&
-              searchResult.path.includes(connection.targetId)
-
-            return (
-              <ConnectionLine
-                key={connection.id}
-                connection={connection}
-                sourcePos={sourcePos}
-                targetPos={targetPos}
-                isHighlighted={isHighlighted}
-                isSelected={selectedConnection === connection.id}
-                onSelect={handleConnectionSelect}
-                onRightClick={handleConnectionRightClick}
-              />
-            )
-          })}
-
-          {/* Temporary connection line */}
-          {connectionState.isConnecting && connectionState.sourcePosition && connectionState.currentPosition && (
-            <ConnectionLine
-              sourcePos={connectionState.sourcePosition}
-              targetPos={connectionState.currentPosition}
-              isTemporary={true}
-            />
-          )}
-        </svg>
-
-        {/* System Nodes */}
-        <AnimatePresence>
-          {filteredSystems.map((system) => {
-            const position = nodePositions[system.id]
-            if (!position) return null
-
-            return (
-              <SystemNode
-                key={system.id}
-                system={system}
-                navigate={navigate}
-                showButtons={searchResult ? searchResult.path.includes(system.id) : false}
-                position={position}
-                onDragStart={handleDragStart}
-                onDrag={handleDrag}
-                onDragEnd={handleDragEnd}
-                onConnectionStart={handleConnectionStart}
-                onConnectionEnd={handleConnectionEnd}
-                isHighlighted={searchResult ? searchResult.path.includes(system.id) : false}
-              />
-            )
-          })}
-        </AnimatePresence>
-      </div>
-
-      {/* Context Menu */}
-      <AnimatePresence>
-        <ContextMenu
-          visible={contextMenu.visible}
-          position={contextMenu.position}
-          onDelete={() => contextMenu.connectionId && handleDeleteConnection(contextMenu.connectionId)}
-          onClose={() => setContextMenu({ visible: false, position: { x: 0, y: 0 }, connectionId: null })}
-        />
-      </AnimatePresence>
-
-      {/* Delete Confirmation Modal */}
-      <AnimatePresence>
-        <DeleteConfirmation
-          visible={showDeleteConfirmation}
-          onConfirm={confirmDeleteConnection}
-          onCancel={cancelDeleteConnection}
-        />
-      </AnimatePresence>
-    </div>
-  )
-}
+// Connection selection and deletion handlers
+const handleConnectionSelect = useCallback((connectionId: string) => {
+  setSelectedConnection(connectionId)
